@@ -9,33 +9,40 @@ import scala.collection.mutable.ListBuffer
 /**
   * Created by kimvra on 2019-04-29
   */
-object TopNStatJob {
+object TopNStatJobYARN {
   def main(args: Array[String]): Unit = {
-    val sparkSession = SparkSession.builder().appName("TopNStatJob")
+
+    if (args.length !=2){
+      println("Usage: TopNStatJobYARN <inputPath> <day>")
+      System.exit(1)
+    }
+
+    val Array(inputPath, day) = args
+    val sparkSession = SparkSession.builder()
       .config("spark.sql.sources.partitionColumnTypeInference.enabled", "false")
-      .master("local[2]").getOrCreate()
+      .getOrCreate()
 
 
-    val accessDataFrame = sparkSession.read.format("parquet").load("/Users/kimvra/IdeaProjects/imooc/cleanData")
+    val accessDataFrame = sparkSession.read.format("parquet").load(inputPath)
     accessDataFrame.printSchema()
     accessDataFrame.show(false)
 
-    //StatDAO.deleteByDate("20170511")
+    StatDAO.deleteByDate(day)
     // 最受欢迎Top N课程
-    //videoAccessTopNStat(sparkSession, accessDataFrame)
+    videoAccessTopNStat(sparkSession, accessDataFrame, day)
 
     // 按照地市进行统计Top N课程
-    cityAccessTopNStat(sparkSession, accessDataFrame)
+    cityAccessTopNStat(sparkSession, accessDataFrame, day)
 
     // 按照流量进行统计Top N课程
-    //trafficAccessTopNStat(sparkSession, accessDataFrame)
+    trafficAccessTopNStat(sparkSession, accessDataFrame, day)
 
     sparkSession.stop()
   }
 
-  def trafficAccessTopNStat(sparkSession: SparkSession, accessDataFrame: DataFrame) = {
+  def trafficAccessTopNStat(sparkSession: SparkSession, accessDataFrame: DataFrame, day: String) = {
     import sparkSession.implicits._
-    val trafficsTopNDataFrame = accessDataFrame.filter($"day" === "20170511" && $"cmsType" === "video")
+    val trafficsTopNDataFrame = accessDataFrame.filter($"day" === day && $"cmsType" === "video")
       .groupBy("day", "cmsId")
       .agg(sum("traffic").as("traffics")).orderBy($"traffics".desc)
 
@@ -59,9 +66,9 @@ object TopNStatJob {
     }
   }
 
-  def cityAccessTopNStat(sparkSession: SparkSession, accessDataFrame: DataFrame) = {
+  def cityAccessTopNStat(sparkSession: SparkSession, accessDataFrame: DataFrame, day: String) = {
     import sparkSession.implicits._
-    val cityAccessDataFrame = accessDataFrame.filter($"day" === "20170511" && $"cmsType" === "video")
+    val cityAccessDataFrame = accessDataFrame.filter($"day" === day && $"cmsType" === "video")
       .groupBy("day", "city", "cmsId")
       .agg(count("cmsId").as("times"))
 
@@ -116,15 +123,15 @@ object TopNStatJob {
     }
   }
 
-  def videoAccessTopNStat(sparkSession: SparkSession, accessDataFrame: DataFrame) = {
-    /*import sparkSession.implicits._
-    var videoAccessDataFrame = accessDataFrame.filter($"day" === "20170511" && $"cmsType" === "video").groupBy("day", "cmsId")
+  def videoAccessTopNStat(sparkSession: SparkSession, accessDataFrame: DataFrame, day: String) = {
+    import sparkSession.implicits._
+    var videoAccessTopNDataFrame = accessDataFrame.filter($"day" === day && $"cmsType" === "video").groupBy("day", "cmsId")
       .agg(count("cmsId").as("times")).orderBy($"times".desc)
-    videoAccessDataFrame.show(false)*/
-
-    accessDataFrame.createOrReplaceTempView("access_logs")
-    val videoAccessTopNDataFrame = sparkSession.sql("select day,cmsId,count(1) as times from access_logs where day='20170511' and cmsType='video' group by day,cmsId order by times desc")
     videoAccessTopNDataFrame.show(false)
+
+    /*accessDataFrame.createOrReplaceTempView("access_logs")
+    val videoAccessTopNDataFrame = sparkSession.sql("select day,cmsId,count(1) as times from access_logs where day='20170511' and cmsType='video' group by day,cmsId order by times desc")*/
+    //videoAccessTopNDataFrame.show(false)
 
     try {
       videoAccessTopNDataFrame.foreachPartition(partitionOdRecords => {
